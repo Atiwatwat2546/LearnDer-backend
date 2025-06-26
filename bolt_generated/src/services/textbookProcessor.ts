@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { GroqService } from './groq';
 
 export interface ProcessingResult {
   success: boolean;
@@ -108,29 +109,12 @@ export class TextbookProcessor {
   }
 
   /**
-   * Get embedding for text using OpenAI API
+   * Get embedding for text using Groq (fallback method)
    */
   private static async getEmbedding(text: string): Promise<number[]> {
     try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-3-small',
-          input: text,
-          encoding_format: 'float'
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.data[0].embedding;
+      // Use Groq's embedding method (which is a fallback since Groq doesn't provide embeddings)
+      return await GroqService.getEmbedding(text);
     } catch (error) {
       console.error('Error getting embedding:', error);
       // Return a dummy embedding for development
@@ -200,7 +184,7 @@ export class TextbookProcessor {
     limit: number = 5
   ): Promise<any[]> {
     try {
-      // Get embedding for the query
+      // Get embedding for the query using Groq
       const queryEmbedding = await this.getEmbedding(query);
 
       // Use the database function to find similar content

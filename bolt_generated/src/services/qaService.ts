@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { TextbookProcessor } from './textbookProcessor';
-import { AIService } from './openai';
+import { GroqService } from './groq';
 
 export interface QARequest {
   question: string;
@@ -72,7 +72,7 @@ export class QAService {
       };
     } catch (error) {
       console.error('Error processing question:', error);
-      throw new Error('ไม่สามารถประมวลผลคำถามได้ในขณะนี้');
+      throw new Error('ขออภัย เกิดข้อผิดพลาดในการประมวลผลคำถาม กรุณาลองใหม่อีกครั้ง');
     }
   }
 
@@ -114,40 +114,64 @@ export class QAService {
     }
 
     const contextParts = chunks.map((chunk, index) => 
-      `[ส่วนที่ ${index + 1}] ${chunk.content}`
+      `[ส่วนที่ ${index + 1} - หน้า ${chunk.page_number}]\n${chunk.content}`
     );
 
-    return contextParts.join('\n\n');
+    return contextParts.join('\n\n---\n\n');
   }
 
   /**
-   * Generate contextual answer using AI
+   * Generate contextual answer using Groq AI
    */
   private static async generateContextualAnswer(
     question: string,
     context: string,
     relevantChunks: any[]
   ): Promise<string> {
-    const systemPrompt = `คุณเป็น AI ผู้ช่วยการเรียนรู้ที่เชี่ยวชาญในการตอบคำถามจากเนื้อหาหนังสือ
+    const systemPrompt = `คุณเป็น AI ผู้ช่วยการเรียนรู้ที่เชี่ยวชาญในการตอบคำถามจากเนื้อหาหนังสือการศึกษา
 
-คำแนะนำ:
-1. ตอบคำถามโดยอิงจากเนื้อหาที่ให้มาเท่านั้น
-2. ใช้ภาษาไทยที่เข้าใจง่าย เหมาะสำหรับนักเรียน
-3. ให้คำตอบที่ชัดเจน มีโครงสร้าง และมีตัวอย่างประกอบ
-4. หากไม่พบข้อมูลที่เกี่ยวข้อง ให้บอกว่าไม่มีข้อมูลในหนังสือ
-5. อ้างอิงหน้าหรือส่วนของหนังสือเมื่อเป็นไปได้
+## บทบาทและหน้าที่ของคุณ:
+คุณเป็นครูผู้ช่วยที่อดทน เข้าใจ และเป็นมิตรกับนักเรียน มีความเชี่ยวชาญในการอธิบายเนื้อหาให้เข้าใจง่าย
 
-เนื้อหาจากหนังสือ:
-${context}`;
+## หลักการตอบคำถาม:
+1. **ใช้เฉพาะเนื้อหาที่ให้มา**: ตอบคำถามโดยอิงจากเนื้อหาในหนังสือเท่านั้น ห้ามแต่งเติมข้อมูลจากภายนอก
+2. **ภาษาไทยที่เข้าใจง่าย**: ใช้ภาษาไทยที่ชัดเจน เหมาะสำหรับนักเรียนระดับมัธยมศึกษา
+3. **โครงสร้างที่ชัดเจน**: จัดเรียงคำตอบให้มีหัวข้อ ข้อย่อย และตัวอย่างประกอบ
+4. **ตอบตรงประเด็น**: ตอบเฉพาะสิ่งที่ถูกถาม ไม่ขยายความนอกเรื่อง
+5. **ให้กำลังใจ**: ใช้น้ำเสียงที่ให้กำลังใจและสร้างแรงบันดาลใจในการเรียนรู้
+
+## รูปแบบการตอบ:
+- เริ่มต้นด้วยการทักทายและแสดงความเข้าใจในคำถาม
+- อธิบายแนวคิดหลักอย่างชัดเจน
+- ให้ตัวอย่างจากเนื้อหาหนังสือ (ถ้ามี)
+- สรุปประเด็นสำคัญ
+- ปิดท้ายด้วยการสอบถามว่ามีคำถามเพิ่มเติมหรือไม่
+
+## สิ่งที่ห้ามทำ:
+❌ ห้ามแต่งข้อมูลที่ไม่มีในหนังสือ
+❌ ห้ามใช้ภาษาที่ซับซ้อนเกินไป
+❌ ห้ามตอบนอกเรื่องหรือขยายความมากเกินไป
+❌ ห้ามใช้น้ำเสียงที่เป็นทางการจนเกินไป
+❌ ห้ามให้ข้อมูลที่อาจเป็นอันตรายหรือไม่เหมาะสม
+
+## เมื่อไม่พบข้อมูล:
+หากไม่พบข้อมูลที่เกี่ยวข้องในหนังสือ ให้ตอบว่า:
+"ขออภัยนะครับ/ค่ะ ในหนังสือเล่มนี้ไม่มีข้อมูลเกี่ยวกับเรื่องที่ถามโดยตรง แต่ถ้ามีคำถามอื่นเกี่ยวกับเนื้อหาในหนังสือ ครูยินดีช่วยอธิบายให้ฟังนะครับ/ค่ะ"
+
+## เนื้อหาจากหนังสือ:
+${context}
+
+จำไว้: คุณเป็นครูที่ใส่ใจนักเรียน อยากให้นักเรียนเข้าใจและรักการเรียนรู้ ตอบด้วยความอดทนและความเข้าใจเสมอ`;
 
     const messages = [
       { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: question }
+      { role: 'user' as const, content: `คำถาม: ${question}` }
     ];
 
-    return await AIService.generateResponse(messages, {
+    return await GroqService.generateResponse(messages, {
       temperature: 0.3, // Lower temperature for more focused answers
-      maxTokens: 800
+      maxTokens: 1000,
+      model: 'llama-3.1-70b-versatile' // Use the most capable model
     });
   }
 
